@@ -20,15 +20,16 @@ export default function Notes() {
   return (
     <div className="max-w-2xl">
       <h1 className="text-2xl font-bold text-gray-900 mb-4">Quick Notes</h1>
-      <div className="flex gap-2 mb-4">
-        <input
-          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+      <div className="flex gap-2 mb-4 items-start">
+        <textarea
+          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-y min-h-[38px]"
           placeholder="Write a note... use #tag for tagging"
+          rows={2}
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleAdd()}
+          onKeyDown={e => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && handleAdd()}
         />
-        <button onClick={handleAdd} className="bg-indigo-500 text-white px-3 py-2 rounded-lg hover:bg-indigo-600 cursor-pointer">
+        <button onClick={handleAdd} className="bg-indigo-500 text-white px-3 py-2 rounded-lg hover:bg-indigo-600 cursor-pointer mt-1">
           <Plus size={18} />
         </button>
       </div>
