@@ -4,6 +4,28 @@ import { Play, Copy, Plus, Trash2, History, X } from 'lucide-react'
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 type HeaderPair = { key: string; value: string }
 
+// Common HTTP request header names offered as autocomplete suggestions.
+// Users can still type any custom header name.
+const COMMON_HEADERS = [
+  'Accept',
+  'Accept-Encoding',
+  'Accept-Language',
+  'Authorization',
+  'Cache-Control',
+  'Content-Type',
+  'Cookie',
+  'Host',
+  'Origin',
+  'Referer',
+  'User-Agent',
+  'X-Api-Key',
+  'X-Requested-With',
+  'X-CSRF-Token',
+  'If-None-Match',
+  'If-Modified-Since',
+  'Connection',
+]
+
 interface HistoryItem {
   id: string
   method: Method
@@ -61,13 +83,29 @@ export default function RestApiTester() {
     try {
       const parsedHeaders: Record<string, string> = {}
       headers.forEach(h => { if (h.key.trim()) parsedHeaders[h.key.trim()] = h.value })
-      const opts: RequestInit = { method, headers: { ...parsedHeaders } }
-      if ((method === 'POST' || method === 'PUT') && body.trim()) {
-        opts.body = body
+      const hasBody = (method === 'POST' || method === 'PUT') && !!body.trim()
+      // Default JSON content type when sending a body and none was set.
+      if (hasBody && !Object.keys(parsedHeaders).some(k => k.toLowerCase() === 'content-type')) {
+        parsedHeaders['Content-Type'] = 'application/json'
       }
-      const res = await fetch(url, opts)
-      setStatus(res.status)
-      const text = await res.text()
+
+      // Route through the same-origin dev-server proxy to avoid browser CORS
+      // blocking. The proxy performs the real request and relays the response.
+      const res = await fetch('/__rest_proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          method,
+          headers: parsedHeaders,
+          body: hasBody ? body : undefined,
+        }),
+      })
+      const proxied = await res.json()
+      if (proxied.error) throw new Error(proxied.error)
+
+      setStatus(proxied.status)
+      const text: string = proxied.body ?? ''
       let formatted = text
       try {
         formatted = JSON.stringify(JSON.parse(text), null, 2)
@@ -81,7 +119,7 @@ export default function RestApiTester() {
         headers: headers.filter(h => h.key.trim()),
         body,
         response: formatted,
-        status: res.status,
+        status: proxied.status,
         timestamp: Date.now(),
       }
       setHistory(prev => [entry, ...prev].slice(0, 50))
@@ -156,12 +194,16 @@ export default function RestApiTester() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div>
           <label className="text-sm font-medium text-gray-700 mb-1 block">Headers</label>
+          <datalist id="common-header-names">
+            {COMMON_HEADERS.map(name => <option key={name} value={name} />)}
+          </datalist>
           <div className="space-y-1.5 mb-3">
             {headers.map((h, i) => (
               <div key={i} className="flex gap-1">
                 <input
                   className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-indigo-400"
                   placeholder="Key"
+                  list="common-header-names"
                   value={h.key}
                   onChange={e => updateHeader(i, 'key', e.target.value)}
                 />

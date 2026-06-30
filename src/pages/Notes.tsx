@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { useNotesStore } from '../store/notes-store'
-import { Plus, Trash2, Tag } from 'lucide-react'
+import { Plus, Trash2, Tag, Pencil, Check, X } from 'lucide-react'
 
 export default function Notes() {
   const [input, setInput] = useState('')
   const [filterTag, setFilterTag] = useState<string | null>(null)
-  const { notes, addNote, deleteNote, getAllTags } = useNotesStore()
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+  const { notes, addNote, updateNote, deleteNote, getAllTags } = useNotesStore()
   const tags = getAllTags()
 
   const filtered = filterTag ? notes.filter(n => n.tags.includes(filterTag)) : notes
@@ -15,6 +17,23 @@ export default function Notes() {
       addNote(input.trim())
       setInput('')
     }
+  }
+
+  const startEdit = (id: string, text: string) => {
+    setEditingId(id)
+    setEditText(text)
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditText('')
+  }
+
+  const saveEdit = () => {
+    if (editingId && editText.trim()) {
+      updateNote(editingId, editText.trim())
+    }
+    cancelEdit()
   }
 
   return (
@@ -46,10 +65,37 @@ export default function Notes() {
       <div className="space-y-2">
         {filtered.map(note => (
           <div key={note.id} className="bg-white border border-gray-200 rounded-lg p-3 flex items-start gap-2">
-            <p className="flex-1 text-sm text-gray-700 whitespace-pre-wrap">{note.text}</p>
-            <button onClick={() => deleteNote(note.id)} className="text-gray-400 hover:text-red-500 cursor-pointer">
-              <Trash2 size={16} />
-            </button>
+            {editingId === note.id ? (
+              <>
+                <textarea
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-y min-h-[38px]"
+                  rows={2}
+                  autoFocus
+                  value={editText}
+                  onChange={e => setEditText(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveEdit()
+                    if (e.key === 'Escape') cancelEdit()
+                  }}
+                />
+                <button onClick={saveEdit} className="text-gray-400 hover:text-green-600 cursor-pointer" title="Save">
+                  <Check size={16} />
+                </button>
+                <button onClick={cancelEdit} className="text-gray-400 hover:text-gray-700 cursor-pointer" title="Cancel">
+                  <X size={16} />
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="flex-1 text-sm text-gray-700 whitespace-pre-wrap">{note.text}</p>
+                <button onClick={() => startEdit(note.id, note.text)} className="text-gray-400 hover:text-indigo-500 cursor-pointer" title="Edit">
+                  <Pencil size={16} />
+                </button>
+                <button onClick={() => deleteNote(note.id)} className="text-gray-400 hover:text-red-500 cursor-pointer" title="Delete">
+                  <Trash2 size={16} />
+                </button>
+              </>
+            )}
           </div>
         ))}
         {filtered.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No notes yet</p>}

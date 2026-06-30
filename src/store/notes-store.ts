@@ -10,10 +10,14 @@ export interface Note {
 interface NotesState {
   notes: Note[]
   addNote: (text: string) => void
+  updateNote: (id: string, text: string) => void
   deleteNote: (id: string) => void
   getNotesByTag: (tag: string) => Note[]
   getAllTags: () => string[]
 }
+
+const parseTags = (text: string): string[] =>
+  Array.from(text.matchAll(/#(\w+)/g)).map(m => m[1])
 
 const loadNotes = (): Note[] => {
   try {
@@ -25,15 +29,23 @@ const loadNotes = (): Note[] => {
 export const useNotesStore = create<NotesState>((set, get) => ({
   notes: loadNotes(),
   addNote: (text: string) => {
-    const tags = Array.from(text.matchAll(/#(\w+)/g)).map(m => m[1])
     const note: Note = {
       id: crypto.randomUUID(),
       text,
-      tags,
+      tags: parseTags(text),
       createdAt: Date.now(),
     }
     set((s) => {
       const updated = [note, ...s.notes]
+      localStorage.setItem('devtools-notes', JSON.stringify(updated))
+      return { notes: updated }
+    })
+  },
+  updateNote: (id: string, text: string) => {
+    set((s) => {
+      const updated = s.notes.map(n =>
+        n.id === id ? { ...n, text, tags: parseTags(text) } : n
+      )
       localStorage.setItem('devtools-notes', JSON.stringify(updated))
       return { notes: updated }
     })
