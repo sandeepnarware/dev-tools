@@ -1,29 +1,14 @@
 import { useState, useEffect } from 'react'
-import { Play, Copy, Plus, Trash2, History, X } from 'lucide-react'
+import { Play, Copy, Plus, Trash2, History, X, Settings } from 'lucide-react'
 
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 type HeaderPair = { key: string; value: string }
 
-// Common HTTP request header names offered as autocomplete suggestions.
-// Users can still type any custom header name.
 const COMMON_HEADERS = [
-  'Accept',
-  'Accept-Encoding',
-  'Accept-Language',
-  'Authorization',
-  'Cache-Control',
-  'Content-Type',
-  'Cookie',
-  'Host',
-  'Origin',
-  'Referer',
-  'User-Agent',
-  'X-Api-Key',
-  'X-Requested-With',
-  'X-CSRF-Token',
-  'If-None-Match',
-  'If-Modified-Since',
-  'Connection',
+  'Accept', 'Accept-Encoding', 'Accept-Language', 'Authorization',
+  'Cache-Control', 'Content-Type', 'Cookie', 'Host', 'Origin',
+  'Referer', 'User-Agent', 'X-Api-Key', 'X-Requested-With', 'X-CSRF-Token',
+  'If-None-Match', 'If-Modified-Since', 'Connection',
 ]
 
 interface HistoryItem {
@@ -37,6 +22,37 @@ interface HistoryItem {
   timestamp: number
 }
 
+interface CorsProxyAdapter {
+  name: string
+  fetch: (targetUrl: string, method: string, headers: Record<string, string>, body?: string) => Promise<{ status: number; body: string }>
+}
+
+const BUILT_IN_PROXIES: CorsProxyAdapter[] = [
+  {
+    name: 'corsproxy.io',
+    fetch: async (url, method, headers, body) => {
+      const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, {
+        method, headers, body,
+      })
+      return { status: res.status, body: await res.text() }
+    },
+  },
+  {
+    name: 'api.allorigins.win',
+    fetch: async (url, method, headers, body) => {
+      const isGet = method === 'GET'
+      const endpoint = isGet ? 'get' : 'post'
+      const res = await fetch(`https://api.allorigins.win/${endpoint}?url=${encodeURIComponent(url)}`, {
+        method: isGet ? 'GET' : 'POST',
+        headers: isGet ? {} : { 'Content-Type': headers['Content-Type'] || 'application/json' },
+        body: isGet ? undefined : body,
+      })
+      const data = await res.json()
+      return { status: data.status?.http_code ?? 200, body: data.contents ?? '' }
+    },
+  },
+]
+
 function loadHistory(): HistoryItem[] {
   try {
     const data = localStorage.getItem('devtools-rest-history')
@@ -48,6 +64,10 @@ function saveHistory(items: HistoryItem[]) {
   localStorage.setItem('devtools-rest-history', JSON.stringify(items))
 }
 
+function loadCustomProxy(): string {
+  try { return localStorage.getItem('devtools-rest-custom-proxy') || '' } catch { return '' }
+}
+
 export default function RestApiTester() {
   const [method, setMethod] = useState<Method>('GET')
   const [url, setUrl] = useState('')
@@ -57,11 +77,14 @@ export default function RestApiTester() {
   const [status, setStatus] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [usedProxy, setUsedProxy] = useState(false)
+  const [usedProxy, setUsedProxy] = useState<string | null>(null)
   const [history, setHistory] = useState<HistoryItem[]>(loadHistory)
   const [showHistory, setShowHistory] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [customProxyUrl, setCustomProxyUrl] = useState(loadCustomProxy)
 
   useEffect(() => { saveHistory(history) }, [history])
+  useEffect(() => { localStorage.setItem('devtools-rest-custom-proxy', customProxyUrl) }, [customProxyUrl])
 
   const updateHeader = (i: number, field: 'key' | 'value', val: string) => {
     const updated = headers.map((h, idx) => idx === i ? { ...h, [field]: val } : h)
@@ -75,15 +98,13 @@ export default function RestApiTester() {
     setHeaders(headers.filter((_, idx) => idx !== i))
   }
 
-  const CORS_PROXY = 'https://corsproxy.io/?url='
-
   const send = async () => {
     if (!url) return
     setLoading(true)
     setError('')
     setResponse('')
     setStatus(null)
-    setUsedProxy(false)
+    setUsedProxy(null)
 
     const parsedHeaders: Record<string, string> = {}
     headers.forEach(h => { if (h.key.trim()) parsedHeaders[h.key.trim()] = h.value })
@@ -92,9 +113,9 @@ export default function RestApiTester() {
       parsedHeaders['Content-Type'] = 'application/json'
     }
 
-    const displayResponse = (statusCode: number, text: string, viaProxy: boolean) => {
+    const displayResponse = (statusCode: number, text: string, proxy: string | null) => {
       setStatus(statusCode)
-      setUsedProxy(viaProxy)
+      setUsedProxy(proxy)
       let formatted = text
       try {
         formatted = JSON.stringify(JSON.parse(text), null, 2)
@@ -124,18 +145,32 @@ export default function RestApiTester() {
     try {
       const res = await doFetch(url)
       const text = await res.text()
-      displayResponse(res.status, text, false)
+      displayResponse(res.status, text, null)
     } catch (e: any) {
       const msg = e.message || ''
       if (e instanceof TypeError && (msg === 'Failed to fetch' || msg.includes('NetworkError'))) {
-        try {
-          const proxyUrl = CORS_PROXY + encodeURIComponent(url)
-          const res = await doFetch(proxyUrl)
-          const text = await res.text()
-          displayResponse(res.status, text, true)
-        } catch (e2: any) {
-          setError('Request blocked by CORS and proxy fallback also failed: ' + (e2.message || 'Unknown error'))
+        let lastError = ''
+        for (const proxy of BUILT_IN_PROXIES) {
+          try {
+            const { status, body } = await proxy.fetch(url, method, parsedHeaders, hasBody ? body : undefined)
+            displayResponse(status, body, proxy.name)
+            return
+          } catch (pe: any) {
+            lastError = pe.message || 'Unknown error'
+          }
         }
+        if (customProxyUrl) {
+          try {
+            const proxyUrl = customProxyUrl.replace('{url}', encodeURIComponent(url))
+            const res = await doFetch(proxyUrl)
+            const text = await res.text()
+            displayResponse(res.status, text, 'custom')
+            return
+          } catch (pe: any) {
+            lastError = pe.message || 'Unknown error'
+          }
+        }
+        setError(`Request blocked by CORS. Tried ${BUILT_IN_PROXIES.length} public proxies.${customProxyUrl ? ' Custom proxy also failed.' : ''} Last error: ${lastError}`)
       } else {
         setError(msg || 'Request failed')
       }
@@ -160,10 +195,32 @@ export default function RestApiTester() {
     <div className="max-w-5xl">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">REST API Tester</h1>
-        <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 cursor-pointer">
-          <History size={16} /> History ({history.length})
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowSettings(!showSettings)} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 cursor-pointer">
+            <Settings size={16} /> Proxy
+          </button>
+          <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 cursor-pointer">
+            <History size={16} /> History ({history.length})
+          </button>
+        </div>
       </div>
+
+      {showSettings && (
+        <div className="mb-4 border border-gray-200 rounded-lg bg-white p-3">
+          <label className="text-sm font-medium text-gray-700 mb-1 block">
+            Custom CORS Proxy URL <span className="text-xs text-gray-400 font-normal">(optional, uses <code>{'{url}'}</code> as placeholder)</span>
+          </label>
+          <input
+            className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            placeholder="https://my-proxy.example.com/?url={url}"
+            value={customProxyUrl}
+            onChange={e => setCustomProxyUrl(e.target.value)}
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            A custom proxy is tried after built-in proxies if they all fail.
+          </p>
+        </div>
+      )}
 
       {showHistory && (
         <div className="mb-4 border border-gray-200 rounded-lg bg-white">
@@ -241,7 +298,7 @@ export default function RestApiTester() {
 
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="text-sm font-medium text-gray-700">Response{status !== null && <span className={`ml-2 text-xs px-2 py-0.5 rounded font-mono ${status < 400 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{status}</span>}{usedProxy && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 font-medium">via CORS proxy</span>}</label>
+            <label className="text-sm font-medium text-gray-700">Response{status !== null && <span className={`ml-2 text-xs px-2 py-0.5 rounded font-mono ${status < 400 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{status}</span>}{usedProxy && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 font-medium">via {usedProxy}</span>}</label>
             {response && <button onClick={() => navigator.clipboard.writeText(response)} className="text-gray-400 hover:text-gray-600 cursor-pointer"><Copy size={16} /></button>}
           </div>
           <pre className="w-full h-72 border border-gray-300 rounded-lg p-3 text-sm bg-gray-50 overflow-auto font-mono whitespace-pre-wrap">{response || error || 'Click Send to see response'}</pre>
