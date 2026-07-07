@@ -5,7 +5,6 @@ import Layout from './components/Layout'
 const Notes = lazy(() => import('./pages/Notes'))
 const SqlFormatter = lazy(() => import('./pages/SqlFormatter'))
 const SqlExplain = lazy(() => import('./pages/SqlExplain'))
-const RestApiTester = lazy(() => import('./pages/RestApiTester'))
 const JwtDecoder = lazy(() => import('./pages/JwtDecoder'))
 const JsonTools = lazy(() => import('./pages/JsonTools'))
 const GuidGenerator = lazy(() => import('./pages/GuidGenerator'))
@@ -30,7 +29,6 @@ export default function App() {
           <Route path="/notes" element={<Notes />} />
           <Route path="/sql-formatter" element={<SqlFormatter />} />
           <Route path="/sql-explain" element={<SqlExplain />} />
-          <Route path="/rest-api" element={<RestApiTester />} />
           <Route path="/jwt" element={<JwtDecoder />} />
           <Route path="/json-tools" element={<JsonTools />} />
           <Route path="/guid" element={<GuidGenerator />} />

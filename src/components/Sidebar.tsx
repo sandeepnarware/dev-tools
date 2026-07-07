@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { 
-  StickyNote, Database, Globe, Key, FileJson, 
+  StickyNote, Database, Key, FileJson, 
   Hash, Dna, Ruler, Palette, QrCode, Lock, CaseSensitive, ChevronLeft, ChevronRight,
   Binary
 } from 'lucide-react'
@@ -9,7 +9,6 @@ const links = [
   { to: '/notes', icon: StickyNote, label: 'Quick Notes' },
   { to: '/sql-formatter', icon: Database, label: 'SQL Formatter' },
   { to: '/sql-explain', icon: Database, label: 'SQL Explain' },
-  { to: '/rest-api', icon: Globe, label: 'REST API Tester' },
   { to: '/jwt', icon: Key, label: 'JWT Decoder' },
   { to: '/json-tools', icon: FileJson, label: 'JSON Tools' },
   { to: '/guid', icon: Hash, label: 'GUID Generator' },
