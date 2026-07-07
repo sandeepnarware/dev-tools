@@ -57,6 +57,7 @@ export default function RestApiTester() {
   const [status, setStatus] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [usedProxy, setUsedProxy] = useState(false)
   const [history, setHistory] = useState<HistoryItem[]>(loadHistory)
   const [showHistory, setShowHistory] = useState(false)
 
@@ -74,38 +75,26 @@ export default function RestApiTester() {
     setHeaders(headers.filter((_, idx) => idx !== i))
   }
 
+  const CORS_PROXY = 'https://corsproxy.io/?url='
+
   const send = async () => {
     if (!url) return
     setLoading(true)
     setError('')
     setResponse('')
     setStatus(null)
-    try {
-      const parsedHeaders: Record<string, string> = {}
-      headers.forEach(h => { if (h.key.trim()) parsedHeaders[h.key.trim()] = h.value })
-      const hasBody = (method === 'POST' || method === 'PUT') && !!body.trim()
-      // Default JSON content type when sending a body and none was set.
-      if (hasBody && !Object.keys(parsedHeaders).some(k => k.toLowerCase() === 'content-type')) {
-        parsedHeaders['Content-Type'] = 'application/json'
-      }
+    setUsedProxy(false)
 
-      // Route through the same-origin dev-server proxy to avoid browser CORS
-      // blocking. The proxy performs the real request and relays the response.
-      const res = await fetch('/__rest_proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url,
-          method,
-          headers: parsedHeaders,
-          body: hasBody ? body : undefined,
-        }),
-      })
-      const proxied = await res.json()
-      if (proxied.error) throw new Error(proxied.error)
+    const parsedHeaders: Record<string, string> = {}
+    headers.forEach(h => { if (h.key.trim()) parsedHeaders[h.key.trim()] = h.value })
+    const hasBody = (method === 'POST' || method === 'PUT') && !!body.trim()
+    if (hasBody && !Object.keys(parsedHeaders).some(k => k.toLowerCase() === 'content-type')) {
+      parsedHeaders['Content-Type'] = 'application/json'
+    }
 
-      setStatus(proxied.status)
-      const text: string = proxied.body ?? ''
+    const displayResponse = (statusCode: number, text: string, viaProxy: boolean) => {
+      setStatus(statusCode)
+      setUsedProxy(viaProxy)
       let formatted = text
       try {
         formatted = JSON.stringify(JSON.parse(text), null, 2)
@@ -119,12 +108,37 @@ export default function RestApiTester() {
         headers: headers.filter(h => h.key.trim()),
         body,
         response: formatted,
-        status: proxied.status,
+        status: statusCode,
         timestamp: Date.now(),
       }
       setHistory(prev => [entry, ...prev].slice(0, 50))
+    }
+
+    const doFetch = (targetUrl: string) =>
+      fetch(targetUrl, {
+        method: method,
+        headers: parsedHeaders,
+        body: hasBody ? body : undefined,
+      })
+
+    try {
+      const res = await doFetch(url)
+      const text = await res.text()
+      displayResponse(res.status, text, false)
     } catch (e: any) {
-      setError(e.message || 'Request failed')
+      const msg = e.message || ''
+      if (e instanceof TypeError && (msg === 'Failed to fetch' || msg.includes('NetworkError'))) {
+        try {
+          const proxyUrl = CORS_PROXY + encodeURIComponent(url)
+          const res = await doFetch(proxyUrl)
+          const text = await res.text()
+          displayResponse(res.status, text, true)
+        } catch (e2: any) {
+          setError('Request blocked by CORS and proxy fallback also failed: ' + (e2.message || 'Unknown error'))
+        }
+      } else {
+        setError(msg || 'Request failed')
+      }
     }
     setLoading(false)
   }
@@ -227,7 +241,7 @@ export default function RestApiTester() {
 
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="text-sm font-medium text-gray-700">Response{status !== null && <span className={`ml-2 text-xs px-2 py-0.5 rounded font-mono ${status < 400 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{status}</span>}</label>
+            <label className="text-sm font-medium text-gray-700">Response{status !== null && <span className={`ml-2 text-xs px-2 py-0.5 rounded font-mono ${status < 400 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{status}</span>}{usedProxy && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 font-medium">via CORS proxy</span>}</label>
             {response && <button onClick={() => navigator.clipboard.writeText(response)} className="text-gray-400 hover:text-gray-600 cursor-pointer"><Copy size={16} /></button>}
           </div>
           <pre className="w-full h-72 border border-gray-300 rounded-lg p-3 text-sm bg-gray-50 overflow-auto font-mono whitespace-pre-wrap">{response || error || 'Click Send to see response'}</pre>
