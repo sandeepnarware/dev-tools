@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNotesStore } from '../store/notes-store'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Trash2, Tag, Pencil, Check, X } from 'lucide-react'
 
 export default function Notes() {
@@ -7,6 +8,7 @@ export default function Notes() {
   const [filterTag, setFilterTag] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const { notes, addNote, updateNote, deleteNote, getAllTags } = useNotesStore()
   const tags = getAllTags()
 
@@ -27,6 +29,13 @@ export default function Notes() {
   const cancelEdit = () => {
     setEditingId(null)
     setEditText('')
+  }
+
+  const handleDeleteConfirm = () => {
+    if (deleteConfirmId) {
+      deleteNote(deleteConfirmId)
+      setDeleteConfirmId(null)
+    }
   }
 
   const saveEdit = () => {
@@ -91,7 +100,7 @@ export default function Notes() {
                 <button onClick={() => startEdit(note.id, note.text)} className="text-gray-400 hover:text-indigo-500 cursor-pointer" title="Edit">
                   <Pencil size={16} />
                 </button>
-                <button onClick={() => deleteNote(note.id)} className="text-gray-400 hover:text-red-500 cursor-pointer" title="Delete">
+                <button onClick={() => setDeleteConfirmId(note.id)} className="text-gray-400 hover:text-red-500 cursor-pointer" title="Delete">
                   <Trash2 size={16} />
                 </button>
               </>
@@ -100,6 +109,13 @@ export default function Notes() {
         ))}
         {filtered.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No notes yet</p>}
       </div>
+      <ConfirmDialog
+        open={deleteConfirmId !== null}
+        title="Delete Note"
+        message={deleteConfirmId ? `Are you sure you want to delete "${notes.find(n => n.id === deleteConfirmId)?.text.slice(0, 80)}${(notes.find(n => n.id === deleteConfirmId)?.text.length ?? 0) > 80 ? '...' : ''}"?` : ''}
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
     </div>
   )
 }
